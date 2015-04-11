@@ -42,7 +42,7 @@ use crypto::symmetriccipher::Encryptor;
 
 /// Entry-point.
 fn main() {
-    println!("HotS-unpack unpacker by athre0z (c) 2015 zyantific.com\n");
+    println!("HotS-unpack by athre0z (c) 2015 zyantific.com\n");
 
     // Parse arguments.
     let args: Vec<_> = env::args().collect();
