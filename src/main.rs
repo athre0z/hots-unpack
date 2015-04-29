@@ -46,8 +46,8 @@ fn main() {
 
     // Parse arguments.
     let args: Vec<_> = env::args().collect();
-    if args.len() != 2 {
-        println!("[*] Usage: {} <input binary>", args[0]);
+    if args.len() < 2 || args.len() > 3 {
+        println!("[*] Usage: {} <input binary> [output binary]", args[0]);
         return;
     }
 
@@ -56,7 +56,12 @@ fn main() {
         Err(why) => panic!("[-] Couldn't open input file: {}", Error::description(&why)),
         Ok(file) => file,
     };
-
+	
+    let out: String = match args.len() {
+        3 => args[2].to_string(),
+	_ => "out.exe".to_string()
+    };
+	
     let mut data = Vec::new();
     let data_size = match f.read_to_end(&mut data) {
         Err(why) => panic!("[-] Couldn't read input file: {}", Error::description(&why)),
@@ -246,14 +251,14 @@ fn main() {
 
     // Write output file.
     println!("[*] Writing output file ...");
-    let mut out_f = match File::create(&Path::new("out.exe")) {
+    let mut out_f = match File::create(&Path::new(&out)) {
         Err(why) => panic!("[-] Couldn't open output file: {}", Error::description(&why)),
         Ok(file) => file,
     };
     
     match out_f.write_all(&data) {
         Err(why) => panic!("[-] Couldn't write to output file: {}", Error::description(&why)),
-        Ok(..) => println!("[+] Wrote {:?} bytes (out.exe).", data.len()),
+        Ok(..) => println!("[+] Wrote {:?} bytes ({}).", data.len(), &out),
     }
 }
 
