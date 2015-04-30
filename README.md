@@ -4,9 +4,9 @@ HotS unpack is a static unpacker for HotS game binaries. It takes an encrypted b
 
 ## Usage
 ```
-hots_unpack path\to\input\binary.exe
+hots_unpack path\to\input\binary.exe [path\to\output\binary.exe]
 ```
-The decrypted file is written into the current working directory and will be called "out.exe".
+The decrypted file is written into the current working directory.
 
 ## Binary distribution
 [The latest precompiled version can be downloaded here (Windows binaries only).](https://github.com/athre0z/hots-unpack/releases/latest)
