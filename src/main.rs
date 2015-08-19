@@ -89,44 +89,55 @@ fn main() {
         + mem::size_of::<pe::ImageSectionHeader>() * num_secs;
     let image_base = unsafe { (*nt).opt_header.image_base } as usize;
 
-    // Scan for chunk table.
-    println!("[*] Heuristically locating chunk table ...");
-    let mut chunk_table_offs = 0;
-    let mut chunk_table_len = 0;
+    let mut chunk_table_opt: Option<Vec<ChunkEntry>> = None;
 
-    'scan: for i in data_offs..data.len() {
-        let mut offs = 0usize;
-        let mut last_addr = 0u32;
+    // Scan for chunk table (old format).
+    {
+        println!("[*] Heuristically locating chunk table ...");
+        let mut chunk_table_offs = 0;
+        let mut chunk_table_len = 0;
 
-        // Check if candidate looks like a chunk table.
-        while i + offs + mem::size_of::<ChunkEntry>() <= data.len() { 
+        'scan: for i in data_offs..data.len() {
+            let mut offs = 0usize;
+            let mut last_addr = 0u32;
+
+            // Check if candidate looks like a chunk table.
+            while i + offs + mem::size_of::<ChunkEntry>() <= data.len() { 
+                unsafe {
+                    let cur = get_data::<ChunkEntry>(&mut data, i + offs);
+
+                    // The chunk table's end is indicated with an 0xFFFFFFFF.
+                    if offs >= 1000 * mem::size_of::<ChunkEntry>() && (*cur).offset == 0xFFFFFFFF {
+                        chunk_table_offs = i;
+                        chunk_table_len = (offs / mem::size_of::<ChunkEntry>()) - 1;
+                        break 'scan;
+                    }
+
+                    // The chunk table entries are stored ascending.
+                    if (*cur).offset <= last_addr {
+                        break;
+                    }
+     
+                    last_addr = (*cur).offset;
+                    offs += mem::size_of::<ChunkEntry>();
+                }
+            }
+        }
+
+        if chunk_table_offs != 0 && chunk_table_len != 0 {
             unsafe {
-                let cur = get_data::<ChunkEntry>(&mut data, i + offs);
-
-                // The chunk table's end is indicated with an 0xFFFFFFFF.
-                if offs >= 1000 * mem::size_of::<ChunkEntry>() && (*cur).offset == 0xFFFFFFFF {
-                    chunk_table_offs = i;
-                    chunk_table_len = (offs / mem::size_of::<ChunkEntry>()) - 1;
-                    break 'scan;
-                }
-
-                // The chunk table entries are stored ascending.
-                if (*cur).offset <= last_addr {
-                    break;
-                }
- 
-                last_addr = (*cur).offset;
-                offs += mem::size_of::<ChunkEntry>();
+                chunk_table_opt = Some(slice::from_raw_parts(get_data::<ChunkEntry>(
+                    &mut data, chunk_table_offs), chunk_table_len).to_vec());
             }
         }
     }
 
-    if chunk_table_offs == 0 || chunk_table_len == 0 {
-        panic!("[-] Unable to locate chunk table.");
-    }
+    let chunk_table = match chunk_table_opt {
+        None => panic!("[-] Unable to locate chunk table."),
+        Some(x) => x,
+    };
 
-    println!("[+] Found chunk table @ FO 0x{:x} ({} entries).", 
-        chunk_table_offs, chunk_table_len);
+    println!("[+] Found chunk table.");
 
     // Scan for AES key.
     println!("[*] Locating AES key ...");
@@ -176,14 +187,10 @@ fn main() {
     // Collect all encrypted chunks into one buffer (we got plenty of memory, don't we? :p)
     println!("[*] Merging encrypted chunks ...", );
     let mut encrypted_blob = Vec::<u8>::new();
-    for i in 0..chunk_table_len {
-        let chunk_info = get_data::<ChunkEntry>(
-            &mut data, chunk_table_offs + mem::size_of::<ChunkEntry>() * i);
-        unsafe {
-            encrypted_blob.extend(get_slice_rva::<u8>(
-                &mut data, sec_table_offs, num_secs, (*chunk_info).offset as usize, 
-                (*chunk_info).size as usize).to_vec());
-        }
+    for cur_chunk in &chunk_table {
+        encrypted_blob.extend(get_slice_rva::<u8>(
+            &mut data, sec_table_offs, num_secs, cur_chunk.offset as usize, 
+            cur_chunk.size as usize).to_vec());
     }
 
     let padding_length = 16 - encrypted_blob.len() % 16;
@@ -214,21 +221,17 @@ fn main() {
     // Write data from blob back into our file buffer.
     println!("[*] Putting decrypted data where it belongs ...");
     let mut read_offset = 0usize;
-    for i in 0..chunk_table_len {
-        let chunk_info = get_data::<ChunkEntry>(
-            &mut data, chunk_table_offs + mem::size_of::<ChunkEntry>() * i);
-        unsafe {
-            let chunk_size = (*chunk_info).size as usize;
-            let mut dst = get_slice_rva::<u8>(&mut data, sec_table_offs, num_secs, 
-                (*chunk_info).offset as usize, chunk_size);
-            let src = &decrypted_blob[read_offset..read_offset + chunk_size];
+    for cur_chunk in &chunk_table {
+        let chunk_size = cur_chunk.size as usize;
+        let mut dst = get_slice_rva::<u8>(&mut data, sec_table_offs, num_secs, 
+            cur_chunk.offset as usize, chunk_size);
+        let src = &decrypted_blob[read_offset..read_offset + chunk_size];
 
-            for (cur_src_byte, cur_dst_byte) in src.iter().zip(dst.iter_mut()) {
-                *cur_dst_byte = *cur_src_byte;
-            }
-
-            read_offset += chunk_size;
+        for (cur_src_byte, cur_dst_byte) in src.iter().zip(dst.iter_mut()) {
+            *cur_dst_byte = *cur_src_byte;
         }
+
+        read_offset += chunk_size;
     }
 
     // Blizz moved the IAT to the .reloc section, which isn't loaded by IDA
@@ -262,6 +265,7 @@ fn main() {
 }
 
 #[repr(C, packed)]
+#[derive(Clone)]
 struct ChunkEntry {
     pub offset: u32,
     pub size: u32,
