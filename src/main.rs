@@ -261,8 +261,7 @@ fn main() {
     }
 }
 
-#[repr(C)]
-#[packed]
+#[repr(C, packed)]
 struct ChunkEntry {
     pub offset: u32,
     pub size: u32,

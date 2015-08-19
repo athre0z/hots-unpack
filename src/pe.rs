@@ -24,8 +24,7 @@
  * SOFTWARE.
  */
 
-#[repr(C)]
-#[packed]
+#[repr(C, packed)]
 pub struct ImageDosHeader {
     pub magic: u16,
     pub cblp: u16,
@@ -50,8 +49,7 @@ pub struct ImageDosHeader {
 
 pub static DOS_MAGIC: u16 = 0x5A4D;
 
-#[repr(C)]
-#[packed]
+#[repr(C, packed)]
 pub struct ImageFileHeader {
     pub machine: u16,
     pub number_of_sections: u16,
@@ -62,15 +60,13 @@ pub struct ImageFileHeader {
     pub characteristics: u16,
 }
 
-#[repr(C)]
-#[packed]
+#[repr(C, packed)]
 pub struct ImageDataDirectory {
     pub virtual_address: u32,
     pub size: u32,
 }
 
-#[repr(C)]
-#[packed]
+#[repr(C, packed)]
 pub struct ImageOptionalHeader {
     pub magic: u16,
     pub major_linker_version: u8,
@@ -105,8 +101,7 @@ pub struct ImageOptionalHeader {
     pub data_directory: [ImageDataDirectory; 16],
 }
 
-#[repr(C)]
-#[packed]
+#[repr(C, packed)]
 pub struct ImageNtHeaders32 {
     pub signature: u32,
     pub file_header: ImageFileHeader,
@@ -115,8 +110,7 @@ pub struct ImageNtHeaders32 {
 
 pub static PE_MAGIC: u32 = 0x4550;
 
-#[repr(C)]
-#[packed]
+#[repr(C, packed)]
 pub struct ImageSectionHeader {
     pub name: [u8; 8],
     pub virtual_size: u32, // also PhysicalAddress
