@@ -42,7 +42,7 @@ use crypto::symmetriccipher::Encryptor;
 
 /// Entry-point.
 fn main() {
-    println!("HotS-unpack by athre0z (c) 2015 zyantific.com\n");
+    println!("HotS-unpack v1.1.0 (c) 2015 athre0z\n");
 
     // Parse arguments.
     let args: Vec<_> = env::args().collect();
@@ -180,7 +180,7 @@ fn main() {
         Some(x) => x,
     };
 
-    println!("[+] Found chunk table.");
+    println!("[+] Found chunk table ({} entries).", chunk_table.len());
 
     // Scan for AES key.
     println!("[*] Locating AES key ...");
