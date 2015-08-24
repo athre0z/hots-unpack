@@ -1,4 +1,4 @@
-HotS unpack
+HotS unpack [![Build Status](https://travis-ci.org/athre0z/hots-unpack.svg)](https://travis-ci.org/athre0z/hots-unpack)
 ===========
 HotS unpack is a static unpacker for HotS game binaries. It takes an encrypted binary as input and creates a decrypted one as output. The output binaries are *not* runnable, but intended only for analysis purposes. Adjusting the entry point would probably make binaries runnable, however this is currently not a goal of this tool. Currently, only the x86 version of HotS is supported.
 
