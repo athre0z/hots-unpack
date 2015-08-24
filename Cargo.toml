@@ -3,8 +3,9 @@ name = "hots_unpack"
 version = "1.0.0"
 authors = [ "athre0z <athre0z@mainframe.pw>" ]
 
-[profile.release]
-opt-level = 0
+#[profile.release]
+#opt-level = 0
 
-[dependencies]
-rust-crypto = "*"
+[dependencies.rust-crypto]
+git = "https://github.com/athre0z/rust-crypto.git"
+branch = "volatile-asm"

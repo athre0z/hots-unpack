@@ -91,13 +91,59 @@ fn main() {
 
     let mut chunk_table_opt: Option<Vec<ChunkEntry>> = None;
 
-    // Scan for chunk table (old format).
+    // Scan for chunk table in new format. 
+    // Yep, there's certainly room for optimization here.
+    println!("[*] Heuristically locating chunk table (new format) ...");
     {
-        println!("[*] Heuristically locating chunk table ...");
-        let mut chunk_table_offs = 0;
-        let mut chunk_table_len = 0;
+        let mut chunk_table_candidate = Vec::<ChunkEntry>::with_capacity(500000);
+        'new_format_scan: for i in data_offs..data.len() {
+            let mut offs = 0usize;
+            let mut abs_offs = 0u32;
 
-        'scan: for i in data_offs..data.len() {
+            //if i % 100000 == 0 { println!("{}", i); }
+
+            while i + offs + mem::size_of::<u8>() <= data.len() {
+                let chunk_entry_offs = match read_compressed_u32(&mut data, i + offs) {
+                    Some((val, size)) => { offs += size; val },
+                    None => break,
+                };
+
+                if abs_offs as u64 + chunk_entry_offs as u64 > u32::max_value() as u64 {
+                    break;
+                }
+                abs_offs += chunk_entry_offs;
+
+                if offs >= 200000 && abs_offs == 0xFFFFFFFF {
+                    chunk_table_opt = Some(chunk_table_candidate);
+                    break 'new_format_scan;
+                }
+
+                if chunk_entry_offs == 0 || chunk_entry_offs >= 0x5000000 {
+                    break;
+                }
+
+                let chunk_entry_size = match read_compressed_u32(&mut data, i + offs) {
+                    Some((val, size)) => { offs += size; val },
+                    None => break,
+                };
+
+                chunk_table_candidate.push(ChunkEntry{
+                    offset: abs_offs,
+                    size: chunk_entry_size
+                });
+                if abs_offs as u64 + chunk_entry_size as u64 > u32::max_value() as u64 {
+                    break;
+                }
+                abs_offs += chunk_entry_size;
+            }
+            chunk_table_candidate.clear();
+        }
+    }
+
+    // If we didn't find it yet, scan for chunk table in old format.
+    if chunk_table_opt.is_none() {
+        println!("[*] Heuristically locating chunk table (old format) ...");
+        'old_format_scan: for i in data_offs..data.len() {
             let mut offs = 0usize;
             let mut last_addr = 0u32;
 
@@ -108,9 +154,13 @@ fn main() {
 
                     // The chunk table's end is indicated with an 0xFFFFFFFF.
                     if offs >= 1000 * mem::size_of::<ChunkEntry>() && (*cur).offset == 0xFFFFFFFF {
-                        chunk_table_offs = i;
-                        chunk_table_len = (offs / mem::size_of::<ChunkEntry>()) - 1;
-                        break 'scan;
+                        chunk_table_opt = Some(
+                            slice::from_raw_parts(
+                                get_data::<ChunkEntry>(&mut data, i), 
+                                (offs / mem::size_of::<ChunkEntry>()) - 1
+                            ).to_vec()
+                        );
+                        break 'old_format_scan;
                     }
 
                     // The chunk table entries are stored ascending.
@@ -121,13 +171,6 @@ fn main() {
                     last_addr = (*cur).offset;
                     offs += mem::size_of::<ChunkEntry>();
                 }
-            }
-        }
-
-        if chunk_table_offs != 0 && chunk_table_len != 0 {
-            unsafe {
-                chunk_table_opt = Some(slice::from_raw_parts(get_data::<ChunkEntry>(
-                    &mut data, chunk_table_offs), chunk_table_len).to_vec());
             }
         }
     }
@@ -322,5 +365,21 @@ fn rva_to_fo(data: &mut Vec<u8>, sec_table_offs: usize,
         }
     }
     
+    None
+}
+
+/// Reads a compressed u32 from the input file.
+fn read_compressed_u32(data: &mut Vec<u8>, file_offset: usize) 
+        -> Option<(u32 /*val*/, usize /* size */)> {
+    let mut out_int = 0u32;
+    let mut shift_offs = 0u32;
+    for i in 0..5 {
+        let cur_byte = unsafe { *get_data::<u8>(data, file_offset + i) };
+        out_int += ((cur_byte as u32) & 0x7F) << shift_offs;
+        shift_offs += 7;
+        if cur_byte & 0x80 == 0 {
+            return Some((out_int, i + 1));
+        }
+    }
     None
 }
