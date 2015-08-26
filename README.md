@@ -12,7 +12,7 @@ The decrypted file is written into the current working directory.
 [The latest precompiled version can be downloaded here (Windows binaries only).](https://github.com/athre0z/hots-unpack/releases/latest)
 
 ## HotS version support
-The tool was successfully tested with revisions 34190, 34659 and 34846.
+The tool was successfully tested with revisions 34190 - 37274.
 
 ## Compilation
 Just like most programs written in the Rust language, this tool can be compiled with a simple cargo invocation:
