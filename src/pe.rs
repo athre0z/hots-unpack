@@ -24,6 +24,8 @@
  * SOFTWARE.
  */
 
+#[allow(dead_code)]
+
 #[repr(C, packed)]
 pub struct ImageDosHeader {
     pub magic: u16,
@@ -48,6 +50,7 @@ pub struct ImageDosHeader {
 }
 
 pub static DOS_MAGIC: u16 = 0x5A4D;
+pub static IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
 
 #[repr(C, packed)]
 pub struct ImageFileHeader {
@@ -67,7 +70,7 @@ pub struct ImageDataDirectory {
 }
 
 #[repr(C, packed)]
-pub struct ImageOptionalHeader {
+pub struct ImageOptionalHeader<UIntPtr> {
     pub magic: u16,
     pub major_linker_version: u8,
     pub minor_linker_version: u8,
@@ -77,7 +80,7 @@ pub struct ImageOptionalHeader {
     pub address_of_entry_point: u32,
     pub base_of_code: u32,
     pub base_of_data: u32,
-    pub image_base: u32,
+    pub image_base: UIntPtr,
     pub section_alignment: u32,
     pub file_alignment: u32,
     pub major_operating_system_version: u16,
@@ -92,10 +95,10 @@ pub struct ImageOptionalHeader {
     pub check_sum: u32,
     pub subsystem: u16,
     pub dll_characteristics: u16,
-    pub size_of_stack_reserve: u32,
-    pub size_of_stack_commit: u32,
-    pub size_of_heap_reserve: u32,
-    pub size_of_heap_commit: u32,
+    pub size_of_stack_reserve: UIntPtr,
+    pub size_of_stack_commit: UIntPtr,
+    pub size_of_heap_reserve: UIntPtr,
+    pub size_of_heap_commit: UIntPtr,
     pub loader_flags: u32,
     pub number_of_rva_and_sizes: u32,
     pub data_directory: [ImageDataDirectory; 16],
@@ -105,7 +108,14 @@ pub struct ImageOptionalHeader {
 pub struct ImageNtHeaders32 {
     pub signature: u32,
     pub file_header: ImageFileHeader,
-    pub opt_header: ImageOptionalHeader,
+    pub opt_header: ImageOptionalHeader<u32>,
+}
+
+#[repr(C, packed)]
+pub struct ImageNtHeaders64 {
+    pub signature: u32,
+    pub file_header: ImageFileHeader,
+    pub opt_header: ImageOptionalHeader<u64>,
 }
 
 pub static PE_MAGIC: u32 = 0x4550;

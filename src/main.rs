@@ -82,6 +82,11 @@ fn main() {
         panic!("[-] Invalid input file: invalid NT header");
     }
 
+    // Is PE64?
+    if unsafe { (*nt).file_header.machine } == pe::IMAGE_FILE_MACHINE_AMD64 {
+        panic!("[-] AMD64 version of game is currently not supported");
+    }
+
     // Obtain useful information.
     let sec_table_offs = nt_header_offs + mem::size_of::<pe::ImageNtHeaders32>();
     let num_secs = unsafe { (*nt).file_header.number_of_sections } as usize;
