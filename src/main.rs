@@ -45,7 +45,7 @@ type Va = u64;
 
 /// Entry-point.
 fn main() {
-    println!("HotS-unpack v1.1.0 (c) 2015 athre0z\n");
+    println!("HotS-unpack v1.2.0 (c) 2015 athre0z\n");
 
     // Parse arguments.
     let args: Vec<_> = env::args().collect();
