@@ -40,6 +40,9 @@ use crypto::{buffer, aes, blockmodes};
 #[allow(unused_imports)]
 use crypto::symmetriccipher::Encryptor;
 
+type Rva = u32;
+type Va = u64;
+
 /// Entry-point.
 fn main() {
     println!("HotS-unpack v1.1.0 (c) 2015 athre0z\n");
@@ -76,23 +79,32 @@ fn main() {
     }
 
     // Parse NT-header.
-    let nt_header_offs = unsafe { (*mz).lfanew } as usize;
+    let nt_header_offs = unsafe { (*mz).lfanew } as u32;
     let nt = get_data::<pe::ImageNtHeaders32>(&mut data, nt_header_offs);
     if unsafe { (*nt).signature } != pe::PE_MAGIC {
         panic!("[-] Invalid input file: invalid NT header");
     }
 
-    // Is PE64?
-    if unsafe { (*nt).file_header.machine } == pe::IMAGE_FILE_MACHINE_AMD64 {
-        panic!("[-] AMD64 version of game is currently not supported");
-    }
-
     // Obtain useful information.
-    let sec_table_offs = nt_header_offs + mem::size_of::<pe::ImageNtHeaders32>();
-    let num_secs = unsafe { (*nt).file_header.number_of_sections } as usize;
-    let data_offs = sec_table_offs 
-        + mem::size_of::<pe::ImageSectionHeader>() * num_secs;
-    let image_base = unsafe { (*nt).opt_header.image_base } as usize;
+    let sec_table_offs;
+    let num_secs;
+    let data_offs;
+    let image_base;
+
+    let is_amd64 = unsafe { (*nt).file_header.machine } == pe::IMAGE_FILE_MACHINE_AMD64;
+    if is_amd64 {
+        let nt64 = get_data::<pe::ImageNtHeaders64>(&mut data, nt_header_offs);
+        sec_table_offs = nt_header_offs + mem::size_of::<pe::ImageNtHeaders64>() as u32;
+        num_secs = unsafe { (*nt64).file_header.number_of_sections } as u32;
+        data_offs = sec_table_offs + mem::size_of::<pe::ImageSectionHeader>() as u32 * num_secs;
+        image_base = unsafe { (*nt64).opt_header.image_base } as Va;
+    }
+    else {
+        sec_table_offs = nt_header_offs + mem::size_of::<pe::ImageNtHeaders32>() as u32;
+        num_secs = unsafe { (*nt).file_header.number_of_sections } as u32;
+        data_offs = sec_table_offs + mem::size_of::<pe::ImageSectionHeader>() as u32 * num_secs;
+        image_base = unsafe { (*nt).opt_header.image_base } as Va;
+    }
 
     let mut chunk_table_opt: Option<Vec<ChunkEntry>> = None;
 
@@ -101,19 +113,19 @@ fn main() {
     println!("[*] Heuristically locating chunk table (new format) ...");
     {
         let mut chunk_table_candidate = Vec::<ChunkEntry>::with_capacity(500000);
-        'new_format_scan: for i in data_offs..data.len() {
-            let mut offs = 0usize;
+        'new_format_scan: for i in data_offs..data.len() as u32 {
+            let mut offs = 0u32;
             let mut abs_offs = 0u32;
 
             //if i % 100000 == 0 { println!("{}", i); }
 
-            while i + offs + mem::size_of::<u8>() <= data.len() {
+            while i + offs + mem::size_of::<u8>() as u32 <= data.len() as u32 {
                 let chunk_entry_offs = match read_compressed_u32(&mut data, i + offs) {
                     Some((val, size)) => { offs += size; val },
                     None => break,
                 };
 
-                if abs_offs as u64 + chunk_entry_offs as u64 > u32::max_value() as u64 {
+                if abs_offs as u32 + chunk_entry_offs as u32 > u32::max_value() as u32 {
                     break;
                 }
                 abs_offs += chunk_entry_offs;
@@ -136,7 +148,7 @@ fn main() {
                     offset: abs_offs,
                     size: chunk_entry_size
                 });
-                if abs_offs as u64 + chunk_entry_size as u64 > u32::max_value() as u64 {
+                if abs_offs as u32 + chunk_entry_size as u32 > u32::max_value() as u32 {
                     break;
                 }
                 abs_offs += chunk_entry_size;
@@ -148,21 +160,23 @@ fn main() {
     // If we didn't find it yet, scan for chunk table in old format.
     if chunk_table_opt.is_none() {
         println!("[*] Heuristically locating chunk table (old format) ...");
-        'old_format_scan: for i in data_offs..data.len() {
-            let mut offs = 0usize;
+        'old_format_scan: for i in data_offs..data.len() as u32 {
+            let mut offs = 0u32;
             let mut last_addr = 0u32;
 
             // Check if candidate looks like a chunk table.
-            while i + offs + mem::size_of::<ChunkEntry>() <= data.len() { 
+            while i + offs + mem::size_of::<ChunkEntry>() as u32 <= data.len() as u32 { 
                 unsafe {
                     let cur = get_data::<ChunkEntry>(&mut data, i + offs);
 
                     // The chunk table's end is indicated with an 0xFFFFFFFF.
-                    if offs >= 1000 * mem::size_of::<ChunkEntry>() && (*cur).offset == 0xFFFFFFFF {
+                    if offs >= 1000 * mem::size_of::<ChunkEntry>() as u32 
+                        && (*cur).offset == 0xFFFFFFFF {
+
                         chunk_table_opt = Some(
                             slice::from_raw_parts(
                                 get_data::<ChunkEntry>(&mut data, i), 
-                                (offs / mem::size_of::<ChunkEntry>()) - 1
+                                (offs as usize / mem::size_of::<ChunkEntry>()) - 1
                             ).to_vec()
                         );
                         break 'old_format_scan;
@@ -174,7 +188,7 @@ fn main() {
                     }
      
                     last_addr = (*cur).offset;
-                    offs += mem::size_of::<ChunkEntry>();
+                    offs += mem::size_of::<ChunkEntry>() as u32;
                 }
             }
         }
@@ -191,20 +205,32 @@ fn main() {
     println!("[*] Locating AES key ...");
 
     // 0xFF -> wildcard
-    let pattern = [
-        0x68, 0x80, 0x00, 0x00, 0x00, // push 80h
-        0x68, 0xFF, 0xFF, 0xFF, 0xFF, // push offset g_aesInputKey
-        0x68, 0xFF, 0xFF, 0xFF, 0xFF, // push offset g_aesKey
-        0xE8, 0xFF, 0xFF, 0xFF, 0xFF, // call AesSetDecryptKey
-        0xE9,                         // jmp  XXX
-    ];
+    let pattern: Vec<u8>;
+    if is_amd64 {
+        pattern = vec![
+            0x48, 0x8D, 0x05, 0xFF, 0xFF, 0xFF, 0xFF, // lea  rax, g_aesKey
+            0x48, 0x8D, 0x15, 0xFF, 0xFF, 0xFF, 0xFF, // lea  rdx, g_aesInputKey
+            0x48, 0x89, 0xC1,                         // mov  rcx, rax
+            0x41, 0xB8, 0x80, 0x00, 0x00, 0x00,       // mov  r8d, 80h
+            0xE8,                                     // call AesSetDecryptKey
+        ];
+    }
+    else {
+        pattern = vec![
+            0x68, 0x80, 0x00, 0x00, 0x00, // push 80h
+            0x68, 0xFF, 0xFF, 0xFF, 0xFF, // push offset g_aesInputKey
+            0x68, 0xFF, 0xFF, 0xFF, 0xFF, // push offset g_aesKey
+            0xE8, 0xFF, 0xFF, 0xFF, 0xFF, // call AesSetDecryptKey
+            0xE9,                         // jmp  XXX
+        ];
+    }
 
     let mut match_ = None;
-    for offs in sec_table_offs..(data.len() - pattern.len()) {
+    for offs in sec_table_offs..(data.len() - pattern.len()) as u32 {
         let mut exhausted = true;
         for (i, cur_pat_byte) in pattern.iter().enumerate() {
             if *cur_pat_byte == 0xFF { continue; }
-            if data[offs + i] != *cur_pat_byte { 
+            if data[offs as usize + i] != *cur_pat_byte { 
                 exhausted = false;
                 break; 
             }
@@ -217,7 +243,18 @@ fn main() {
     }
 
     let aes_key_rva = match match_ {
-        Some(x) => unsafe { *get_data::<u32>(&mut data, x + 6) as usize - image_base },
+        // TODO: change behaviour depending on ia32/amd64
+        Some(x) => unsafe { 
+            if is_amd64 {
+                // RIP-relative addressing
+                (fo_to_rva(&mut data, sec_table_offs, num_secs, x + 7).unwrap() as i32
+                    + *get_data::<i32>(&mut data, x + 7 + 3) 
+                    + 7) as Rva
+            }
+            else {
+                (*get_data::<u32>(&mut data, x + 6) as u64 - image_base) as Rva
+            }
+        },
         None => panic!("[-] Unable to locate AES key.")
     };
 
@@ -237,8 +274,8 @@ fn main() {
     let mut encrypted_blob = Vec::<u8>::new();
     for cur_chunk in &chunk_table {
         encrypted_blob.extend(get_slice_rva::<u8>(
-            &mut data, sec_table_offs, num_secs, cur_chunk.offset as usize, 
-            cur_chunk.size as usize).to_vec());
+            &mut data, sec_table_offs, num_secs, cur_chunk.offset as Rva, 
+            cur_chunk.size as u32).to_vec());
     }
 
     let padding_length = 16 - encrypted_blob.len() % 16;
@@ -268,12 +305,12 @@ fn main() {
 
     // Write data from blob back into our file buffer.
     println!("[*] Putting decrypted data where it belongs ...");
-    let mut read_offset = 0usize;
+    let mut read_offset = 0u32;
     for cur_chunk in &chunk_table {
-        let chunk_size = cur_chunk.size as usize;
+        let chunk_size = cur_chunk.size as u32;
         let mut dst = get_slice_rva::<u8>(&mut data, sec_table_offs, num_secs, 
-            cur_chunk.offset as usize, chunk_size);
-        let src = &decrypted_blob[read_offset..read_offset + chunk_size];
+            cur_chunk.offset as Rva, chunk_size);
+        let src = &decrypted_blob[read_offset as usize..(read_offset + chunk_size) as usize];
 
         for (cur_src_byte, cur_dst_byte) in src.iter().zip(dst.iter_mut()) {
             *cur_dst_byte = *cur_src_byte;
@@ -288,7 +325,9 @@ fn main() {
     println!("[*] Fixing section table ...");
     for i in 0..num_secs {
         let cur_sec = get_data::<pe::ImageSectionHeader>(
-            &mut data, sec_table_offs + mem::size_of::<pe::ImageSectionHeader>() * i);
+            &mut data, 
+            sec_table_offs + mem::size_of::<pe::ImageSectionHeader>() as u32 * i
+        );
 
         unsafe {
             if (*cur_sec).name.iter().zip(".reloc".as_bytes().iter()).all(|(a, b)| a == b) {
@@ -320,16 +359,16 @@ struct ChunkEntry {
 }
 
 /// Obtains a ptr to a struct inside the input file by it's file offset.
-fn get_data<T>(data: &mut Vec<u8>, file_offset: usize) -> *mut T {
-    if mem::size_of::<T>() > data.len() - file_offset {
+fn get_data<T>(data: &mut Vec<u8>, file_offset: u32) -> *mut T {
+    if mem::size_of::<T>() > data.len() - file_offset as usize {
         panic!("[-] Invalid input file: file address exceeds file boundaries.");
     }
-    unsafe { mem::transmute(data.as_ptr() as usize + file_offset) }
+    unsafe { mem::transmute(data.as_ptr() as usize + file_offset as usize) }
 }
 
 /// Obtains a ptr to a struct inside the input file by it's RVA.
-fn get_data_rva<T>(data: &mut Vec<u8>, sec_table_offs: usize, 
-    num_secs: usize, rva: usize) -> *mut T {
+fn get_data_rva<T>(data: &mut Vec<u8>, sec_table_offs: u32, 
+    num_secs: u32, rva: Rva) -> *mut T {
 
     match rva_to_fo(data, sec_table_offs, num_secs, rva) {
         Some(rva) => get_data::<T>(data, rva),
@@ -338,34 +377,36 @@ fn get_data_rva<T>(data: &mut Vec<u8>, sec_table_offs: usize,
 }
 
 /// Obtains a mutable slice from the input file by it's RVA.
-fn get_slice_rva<'a, T>(data: &'a mut Vec<u8>, sec_table_offs: usize, 
-    num_secs: usize, rva: usize, len: usize) -> &'a mut [T] {
+fn get_slice_rva<'a, T>(data: &'a mut Vec<u8>, sec_table_offs: u32, 
+    num_secs: u32, rva: Rva, len: u32) -> &'a mut [T] {
 
     let file_offset = match rva_to_fo(data, sec_table_offs, num_secs, rva) {
         Some(fo) => fo,
         None => panic!("[-] Invalid input file: Pointer to an invalid RVA encountered.")
     };
 
-    if mem::size_of::<T>() * len > data.len() - file_offset {
+    if mem::size_of::<T>() * len as usize > data.len() - file_offset as usize {
         panic!("[-] Invalid input file: file address exceeds file boundaries.");
     }
 
     unsafe { slice::from_raw_parts_mut(mem::transmute(
-        data.as_ptr() as usize + file_offset), len) }
+        data.as_ptr() as usize + file_offset as usize), len as usize) }
 }
 
 /// Translates an RVA to a file offset.
-fn rva_to_fo(data: &mut Vec<u8>, sec_table_offs: usize, 
-    num_secs: usize, rva: usize) -> Option<usize> {
+fn rva_to_fo(data: &mut Vec<u8>, sec_table_offs: u32, 
+    num_secs: u32, rva: Rva) -> Option<u32> {
     
     for i in 0..num_secs {
         let cur_sec = get_data::<pe::ImageSectionHeader>(
-            data, sec_table_offs + mem::size_of::<pe::ImageSectionHeader>() * i);
+            data, 
+            sec_table_offs + mem::size_of::<pe::ImageSectionHeader>() as u32 * i
+        );
 
         unsafe {
-            let sec_va = (*cur_sec).virtual_address as usize;
-            if rva >= sec_va && rva <= sec_va + (*cur_sec).virtual_size as usize {
-                return Some(rva - sec_va + (*cur_sec).pointer_to_raw_data as usize);
+            let sec_va = (*cur_sec).virtual_address;
+            if rva >= sec_va && rva <= sec_va + (*cur_sec).virtual_size {
+                return Some((rva - sec_va + (*cur_sec).pointer_to_raw_data) as u32);
             }
         }
     }
@@ -373,9 +414,30 @@ fn rva_to_fo(data: &mut Vec<u8>, sec_table_offs: usize,
     None
 }
 
+/// Translates an FO to an RVA.
+fn fo_to_rva(data: &mut Vec<u8>, sec_table_offs: u32, 
+    num_secs: u32, fo: u32) -> Option<u32> {
+
+    for i in 0..num_secs {
+        let cur_sec = get_data::<pe::ImageSectionHeader>(
+            data, 
+            sec_table_offs + mem::size_of::<pe::ImageSectionHeader>() as u32 * i
+        );
+
+        unsafe {
+            let sec_fo = (*cur_sec).pointer_to_raw_data as u32;
+            if fo >= sec_fo && fo <= sec_fo + (*cur_sec).size_of_raw_data {
+                return Some((fo - sec_fo + (*cur_sec).virtual_address));
+            }
+        }
+    }
+
+    None
+}
+
 /// Reads a compressed u32 from the input file.
-fn read_compressed_u32(data: &mut Vec<u8>, file_offset: usize) 
-        -> Option<(u32 /*val*/, usize /* size */)> {
+fn read_compressed_u32(data: &mut Vec<u8>, file_offset: u32) 
+        -> Option<(u32 /*val*/, u32 /* size */)> {
     let mut out_int = 0u32;
     let mut shift_offs = 0u32;
     for i in 0..5 {

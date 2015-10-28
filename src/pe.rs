@@ -70,7 +70,7 @@ pub struct ImageDataDirectory {
 }
 
 #[repr(C, packed)]
-pub struct ImageOptionalHeader<UIntPtr> {
+pub struct ImageOptionalHeader32 {
     pub magic: u16,
     pub major_linker_version: u8,
     pub minor_linker_version: u8,
@@ -80,7 +80,7 @@ pub struct ImageOptionalHeader<UIntPtr> {
     pub address_of_entry_point: u32,
     pub base_of_code: u32,
     pub base_of_data: u32,
-    pub image_base: UIntPtr,
+    pub image_base: u32,
     pub section_alignment: u32,
     pub file_alignment: u32,
     pub major_operating_system_version: u16,
@@ -95,10 +95,44 @@ pub struct ImageOptionalHeader<UIntPtr> {
     pub check_sum: u32,
     pub subsystem: u16,
     pub dll_characteristics: u16,
-    pub size_of_stack_reserve: UIntPtr,
-    pub size_of_stack_commit: UIntPtr,
-    pub size_of_heap_reserve: UIntPtr,
-    pub size_of_heap_commit: UIntPtr,
+    pub size_of_stack_reserve: u32,
+    pub size_of_stack_commit: u32,
+    pub size_of_heap_reserve: u32,
+    pub size_of_heap_commit: u32,
+    pub loader_flags: u32,
+    pub number_of_rva_and_sizes: u32,
+    pub data_directory: [ImageDataDirectory; 16],
+}
+
+#[repr(C, packed)]
+pub struct ImageOptionalHeader64 {
+    pub magic: u16,
+    pub major_linker_version: u8,
+    pub minor_linker_version: u8,
+    pub size_of_code: u32,
+    pub size_of_initialized_data: u32,
+    pub size_of_uninitialized_data: u32,
+    pub address_of_entry_point: u32,
+    pub base_of_code: u32,
+    pub image_base: u64,
+    pub section_alignment: u32,
+    pub file_alignment: u32,
+    pub major_operating_system_version: u16,
+    pub minor_operating_system_version: u16,
+    pub major_image_version: u16,
+    pub minor_image_version: u16,
+    pub major_subsystem_version: u16,
+    pub minor_subsystem_version: u16,
+    pub win32_version_value: u32,
+    pub size_of_image: u32,
+    pub size_of_headers: u32,
+    pub check_sum: u32,
+    pub subsystem: u16,
+    pub dll_characteristics: u16,
+    pub size_of_stack_reserve: u64,
+    pub size_of_stack_commit: u64,
+    pub size_of_heap_reserve: u64,
+    pub size_of_heap_commit: u64,
     pub loader_flags: u32,
     pub number_of_rva_and_sizes: u32,
     pub data_directory: [ImageDataDirectory; 16],
@@ -108,14 +142,14 @@ pub struct ImageOptionalHeader<UIntPtr> {
 pub struct ImageNtHeaders32 {
     pub signature: u32,
     pub file_header: ImageFileHeader,
-    pub opt_header: ImageOptionalHeader<u32>,
+    pub opt_header: ImageOptionalHeader32,
 }
 
 #[repr(C, packed)]
 pub struct ImageNtHeaders64 {
     pub signature: u32,
     pub file_header: ImageFileHeader,
-    pub opt_header: ImageOptionalHeader<u64>,
+    pub opt_header: ImageOptionalHeader64,
 }
 
 pub static PE_MAGIC: u32 = 0x4550;
