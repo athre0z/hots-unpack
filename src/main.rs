@@ -217,11 +217,11 @@ fn main() {
     }
     else {
         pattern = vec![
-            0x68, 0x80, 0x00, 0x00, 0x00, // push 80h
-            0x68, 0xFF, 0xFF, 0xFF, 0xFF, // push offset g_aesInputKey
-            0x68, 0xFF, 0xFF, 0xFF, 0xFF, // push offset g_aesKey
-            0xE8, 0xFF, 0xFF, 0xFF, 0xFF, // call AesSetDecryptKey
-            0xE9,                         // jmp  XXX
+            0x68, 0x80, 0x00, 0x00, 0x00,             // push 80h
+            0x68, 0xFF, 0xFF, 0xFF, 0xFF,             // push offset g_aesInputKey
+            0x68, 0xFF, 0xFF, 0xFF, 0xFF,             // push offset g_aesKey
+            0xE8, 0xFF, 0xFF, 0xFF, 0xFF,             // call AesSetDecryptKey
+            0xE9,                                     // jmp  XXX
         ];
     }
 
@@ -243,7 +243,6 @@ fn main() {
     }
 
     let aes_key_rva = match match_ {
-        // TODO: change behaviour depending on ia32/amd64
         Some(x) => unsafe { 
             if is_amd64 {
                 // RIP-relative addressing
@@ -389,8 +388,10 @@ fn get_slice_rva<'a, T>(data: &'a mut Vec<u8>, sec_table_offs: u32,
         panic!("[-] Invalid input file: file address exceeds file boundaries.");
     }
 
-    unsafe { slice::from_raw_parts_mut(mem::transmute(
-        data.as_ptr() as usize + file_offset as usize), len as usize) }
+    unsafe { 
+        slice::from_raw_parts_mut(mem::transmute(
+            data.as_ptr() as usize + file_offset as usize), len as usize) 
+    }
 }
 
 /// Translates an RVA to a file offset.
@@ -410,14 +411,13 @@ fn rva_to_fo(data: &mut Vec<u8>, sec_table_offs: u32,
             }
         }
     }
-    
     None
 }
 
 /// Translates an FO to an RVA.
 fn fo_to_rva(data: &mut Vec<u8>, sec_table_offs: u32, 
     num_secs: u32, fo: u32) -> Option<u32> {
-
+    
     for i in 0..num_secs {
         let cur_sec = get_data::<pe::ImageSectionHeader>(
             data, 
@@ -431,13 +431,13 @@ fn fo_to_rva(data: &mut Vec<u8>, sec_table_offs: u32,
             }
         }
     }
-
     None
 }
 
 /// Reads a compressed u32 from the input file.
 fn read_compressed_u32(data: &mut Vec<u8>, file_offset: u32) 
-        -> Option<(u32 /*val*/, u32 /* size */)> {
+        -> Option<(u32 /*val*/, u32 /*size*/)> {
+
     let mut out_int = 0u32;
     let mut shift_offs = 0u32;
     for i in 0..5 {
